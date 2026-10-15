@@ -7,11 +7,17 @@ import Input from "../ui/Input";
 import api from "../../utils/api";
 import { Flame, Package, Check, RefreshCw, Mail, ArrowRight } from "lucide-react";
 
-const DEFAULT_LPG_WEIGHTS = [
-  { value: 6, label: "6.0 kg", shortLabel: "6 kg" },
-  { value: 13, label: "13.0 kg", shortLabel: "13 kg" },
-  { value: 40, label: "40.0 kg", shortLabel: "40 kg" },
-  { value: 45, label: "45.0 kg", shortLabel: "45 kg" }
+const DEFAULT_REFILL_WEIGHTS = [
+  { value: 6, label: "6.0 kg", shortLabel: "6 kg", price: 55000 },
+  { value: 13, label: "13.0 kg", shortLabel: "13 kg", price: 115000 },
+  { value: 40, label: "40.0 kg", shortLabel: "40 kg", price: 240000 },
+  { value: 45, label: "45.0 kg", shortLabel: "45 kg", price: 329000 }
+];
+
+const DEFAULT_NEW_CONN_WEIGHTS = [
+  { value: 6, label: "6.0 kg", shortLabel: "6 kg", price: 180000 },
+  { value: 13, label: "13.0 kg", shortLabel: "13 kg", price: 270000 },
+  { value: 45, label: "45.0 kg", shortLabel: "45 kg", price: 650000 }
 ];
 
 const GAS_TYPES = [
@@ -37,9 +43,8 @@ export default function CalculatorForm() {
   const navigate = useNavigate();
   const location = useLocation();
   const [products, setProducts] = useState([]);
-  const [weightOptions, setWeightOptions] = useState(DEFAULT_LPG_WEIGHTS);
-  const [weightIndex, setWeightIndex] = useState(0);
   const [serviceType, setServiceType] = useState(null); // 'REFILL' | 'NEW_CONNECTION' | null
+  const [selectedWeight, setSelectedWeight] = useState(6);
   const [serviceTypeError, setServiceTypeError] = useState(false);
   const [countryCode, setCountryCode] = useState("+256"); // Default Uganda
 
@@ -81,7 +86,7 @@ export default function CalculatorForm() {
 
     // 2. Top 2 Industrial Gas Products
     const industrialProds = products
-      .filter(p => (p.categoryName || p.category?.name || p.categorySlug || "").toUpperCase().includes("INDUSTRIAL"))
+      .filter(p => p.isActive !== false && (p.categoryName || p.category?.name || p.categorySlug || "").toUpperCase().includes("INDUSTRIAL"))
       .slice(0, 2);
 
     industrialProds.forEach(p => {
@@ -93,7 +98,7 @@ export default function CalculatorForm() {
 
     // 3. Top 2 Refrigerant Gas Products
     const refrigerantProds = products
-      .filter(p => (p.categoryName || p.category?.name || p.categorySlug || "").toUpperCase().includes("REFRIGERANT"))
+      .filter(p => p.isActive !== false && (p.categoryName || p.category?.name || p.categorySlug || "").toUpperCase().includes("REFRIGERANT"))
       .slice(0, 2);
 
     refrigerantProds.forEach(p => {
@@ -112,81 +117,113 @@ export default function CalculatorForm() {
     return list;
   }, [products, serviceType]);
 
-  // Dynamically load LPG products and refill weights from database
+  // Dynamically load products from backend API (filter active only)
   useEffect(() => {
     api.get("/products").then(res => {
       if (res.data?.success && Array.isArray(res.data.data)) {
-        setProducts(res.data.data);
-
-        const lpgProds = res.data.data.filter(p => {
-          const cat = (p.categoryName || p.category?.name || p.categorySlug || "").toLowerCase();
-          return cat.includes("lpg") || cat.includes("cylinder");
-        });
-
-        const weightMap = new Map();
-        lpgProds.forEach(p => {
-          const rawW = p.weight ? String(p.weight).trim() : (p.title || "");
-          const match = rawW.match(/(\d+(\.\d+)?)/);
-          if (match) {
-            const num = parseFloat(match[1]);
-            if (num > 0 && !weightMap.has(num)) {
-              weightMap.set(num, {
-                value: num,
-                label: `${num.toFixed(1)} kg`,
-                shortLabel: `${num} kg`
-              });
-            }
-          }
-        });
-
-        if (weightMap.size > 0) {
-          const sorted = Array.from(weightMap.values()).sort((a, b) => a.value - b.value);
-          setWeightOptions(sorted);
-        }
+        const activeOnly = res.data.data.filter(p => p.isActive !== false);
+        setProducts(activeOnly);
       }
     }).catch(() => {});
   }, []);
+
+  // Filter only [LPG GAS CYLINDERS] active products
+  const lpgProducts = useMemo(() => {
+    return products.filter(p => {
+      if (p.isActive === false) return false;
+      const cat = (p.categoryName || p.category?.name || p.categorySlug || "").toUpperCase();
+      return cat.includes("LPG") || cat.includes("CYLINDER");
+    });
+  }, [products]);
+
+  // Active Refill products
+  const refillProducts = useMemo(() => {
+    return lpgProducts.filter(p => {
+      const t = (p.title || "").toLowerCase();
+      return t.includes("refill") || (!t.includes("new") && !t.includes("connection") && !t.includes("empty") && !t.includes("deposit"));
+    });
+  }, [lpgProducts]);
+
+  // Active New Connection products
+  const newConnProducts = useMemo(() => {
+    return lpgProducts.filter(p => {
+      const t = (p.title || "").toLowerCase();
+      return t.includes("new") || t.includes("connection");
+    });
+  }, [lpgProducts]);
+
+  // Dynamic weights based strictly on active products in database
+  const weightOptions = useMemo(() => {
+    let targetProds = [];
+    if (serviceType === "NEW_CONNECTION") {
+      targetProds = newConnProducts;
+    } else if (serviceType === "REFILL") {
+      targetProds = refillProducts;
+    } else {
+      // Unselected initial state: show refill products if available, else active LPG
+      targetProds = refillProducts.length > 0 ? refillProducts : lpgProducts;
+    }
+
+    if (targetProds.length === 0) {
+      return serviceType === "NEW_CONNECTION" ? DEFAULT_NEW_CONN_WEIGHTS : DEFAULT_REFILL_WEIGHTS;
+    }
+
+    const weightMap = new Map();
+    targetProds.forEach(prod => {
+      const raw = String(prod.weight || prod.title || "");
+      const match = raw.match(/(\d+(\.\d+)?)/);
+      if (match) {
+        const num = parseFloat(match[1]);
+        if (num > 0 && !weightMap.has(num)) {
+          weightMap.set(num, {
+            value: num,
+            label: `${num.toFixed(1)} kg`,
+            shortLabel: `${num} kg`,
+            price: prod.price || 0,
+            product: prod
+          });
+        }
+      }
+    });
+
+    if (weightMap.size > 0) {
+      return Array.from(weightMap.values()).sort((a, b) => a.value - b.value);
+    }
+
+    return serviceType === "NEW_CONNECTION" ? DEFAULT_NEW_CONN_WEIGHTS : DEFAULT_REFILL_WEIGHTS;
+  }, [serviceType, refillProducts, newConnProducts, lpgProducts]);
+
+  // Calculate current slider index from selectedWeight
+  const weightIndex = useMemo(() => {
+    const idx = weightOptions.findIndex(o => o.value === selectedWeight);
+    return idx !== -1 ? idx : 0;
+  }, [weightOptions, selectedWeight]);
+
+  // When weightOptions change (e.g. user toggles between Refill and New Connection),
+  // ensure selectedWeight stays valid; if not present, pick the closest available weight
+  useEffect(() => {
+    if (weightOptions.length > 0) {
+      const exists = weightOptions.some(o => o.value === selectedWeight);
+      if (!exists) {
+        const closest = weightOptions.reduce((prev, curr) => 
+          Math.abs(curr.value - selectedWeight) < Math.abs(prev.value - selectedWeight) ? curr : prev
+        , weightOptions[0]);
+        setSelectedWeight(closest.value);
+        setValue("weight", closest.value.toFixed(1));
+      } else {
+        setValue("weight", selectedWeight.toFixed(1));
+      }
+    }
+  }, [weightOptions, selectedWeight, setValue]);
 
   // Helper to find exact product price from database based on weight & order mode
   const getLiveProductPrice = (weightNum, mode, gasTypeVal) => {
     const isLpg = !gasTypeVal || gasTypeVal === "lpg_domestic";
 
-    if (isLpg && products.length > 0) {
-      const lpgProds = products.filter(p => {
-        const cat = (p.categoryName || p.category?.name || p.categorySlug || "").toLowerCase();
-        return cat.includes("lpg") || cat.includes("cylinder");
-      });
-
-      // Filter products matching this weight
-      const weightMatches = lpgProds.filter(p => {
-        const rawW = String(p.weight || p.title || "").toLowerCase();
-        const m = rawW.match(/(\d+(\.\d+)?)/);
-        return m && Math.round(parseFloat(m[1])) === Math.round(weightNum);
-      });
-
-      if (weightMatches.length > 0) {
-        if (mode === "NEW_CONNECTION") {
-          const newProd = weightMatches.find(p => {
-            const t = (p.title || "").toLowerCase();
-            return t.includes("new") || t.includes("connection");
-          });
-          if (newProd && typeof newProd.price === "number" && newProd.price > 0) {
-            return newProd.price;
-          }
-        } else {
-          // Default REFILL
-          const refillProd = weightMatches.find(p => {
-            const t = (p.title || "").toLowerCase();
-            return t.includes("refill") || (!t.includes("new") && !t.includes("empty"));
-          });
-          if (refillProd && typeof refillProd.price === "number" && refillProd.price > 0) {
-            return refillProd.price;
-          }
-        }
-
-        if (typeof weightMatches[0].price === "number" && weightMatches[0].price > 0) {
-          return weightMatches[0].price;
-        }
+    if (isLpg && weightOptions.length > 0) {
+      const matchedOpt = weightOptions.find(o => Math.round(o.value) === Math.round(weightNum));
+      if (matchedOpt && typeof matchedOpt.price === "number" && matchedOpt.price > 0) {
+        return matchedOpt.price;
       }
     }
 
@@ -195,12 +232,13 @@ export default function CalculatorForm() {
   };
 
   // Live computed price for current selection
-  const selectedWeightVal = weightOptions[weightIndex]?.value || 6;
+  const selectedWeightOpt = weightOptions[weightIndex] || weightOptions[0];
+  const selectedWeightVal = selectedWeightOpt?.value || 6;
   let currentLivePrice = 0;
   if (isCustomProduct && selectedProduct) {
     currentLivePrice = selectedProduct.price || 0;
   } else if (serviceType) {
-    currentLivePrice = getLiveProductPrice(selectedWeightVal, serviceType, "lpg_domestic");
+    currentLivePrice = selectedWeightOpt?.price || getLiveProductPrice(selectedWeightVal, serviceType, "lpg_domestic");
   }
 
   useEffect(() => {
@@ -225,18 +263,21 @@ export default function CalculatorForm() {
 
       if (prefill.weight !== undefined) {
         const wVal = parseFloat(prefill.weight);
-        const foundIdx = weightOptions.findIndex(o => o.value === wVal);
-        const idx = foundIdx !== -1 ? foundIdx : (wVal <= 6 ? 0 : wVal <= 13 ? 1 : wVal <= 40 ? 2 : 3);
-        setWeightIndex(idx);
-        setValue("weight", `${wVal}.0`);
+        if (wVal > 0) {
+          setSelectedWeight(wVal);
+          setValue("weight", `${wVal}.0`);
+        }
       }
     }
-  }, [location.state, setValue, weightOptions]);
+  }, [location.state, setValue]);
 
   const handleIndexChange = (newIndex) => {
-    setWeightIndex(newIndex);
-    const val = weightOptions[newIndex]?.value || 6;
-    setValue("weight", val.toFixed(1));
+    const safeIdx = Math.max(0, Math.min(newIndex, weightOptions.length - 1));
+    const opt = weightOptions[safeIdx];
+    if (opt) {
+      setSelectedWeight(opt.value);
+      setValue("weight", opt.value.toFixed(1));
+    }
   };
 
   const onSubmitCalculator = async (data) => {
@@ -247,7 +288,9 @@ export default function CalculatorForm() {
 
     const selectedGas = gasTypeOptions.find(g => g.value === data.gasType) || gasTypeOptions[0];
     const selectedLoc = DELIVERY_LOCATIONS.find(l => l.value === data.location) || DELIVERY_LOCATIONS[0];
-    const weightVal = weightOptions[weightIndex]?.value || 6;
+    const activeWeightOpt = weightOptions[weightIndex] || weightOptions[0];
+    const weightVal = activeWeightOpt?.value || 6;
+    const activeProd = activeWeightOpt?.product;
 
     let finalPrice = 0;
     let finalGasLabel = selectedGas?.label || "LPG Gas Refill";
@@ -259,9 +302,9 @@ export default function CalculatorForm() {
       finalGasLabel = selectedProduct.title;
       finalWeight = selectedProduct.weight || "Standard Cylinder";
     } else {
-      finalPrice = getLiveProductPrice(weightVal, serviceType, "lpg_domestic");
-      finalGasLabel = selectedGas?.label || (serviceType === "NEW_CONNECTION" ? "LPG Gas New Connection" : "LPG Gas Refill");
-      finalWeight = weightVal;
+      finalPrice = activeWeightOpt?.price || getLiveProductPrice(weightVal, serviceType, "lpg_domestic");
+      finalGasLabel = activeProd?.title || (serviceType === "NEW_CONNECTION" ? `LPG Gas New Connection (${weightVal}kg)` : `LPG Gas Refill (${weightVal}kg)`);
+      finalWeight = typeof weightVal === "number" ? `${weightVal} KG` : weightVal;
       if (weightVal > 45) {
         isHeavyCommercial = true;
       }
@@ -297,7 +340,7 @@ export default function CalculatorForm() {
       countryCode: countryCode,
       location: selectedLoc.label,
       locationValue: data.location,
-      productId: isCustomProduct ? selectedProduct?._id : undefined,
+      productId: isCustomProduct ? selectedProduct?._id : (activeProd?._id || undefined),
       productTitle: finalGasLabel,
       gasType: finalGasLabel,
       gasLabel: finalGasLabel,
@@ -518,7 +561,7 @@ export default function CalculatorForm() {
                   <div className="flex justify-between text-[11px] font-bold text-slate-400 px-1 mt-1">
                     {weightOptions.map((opt, idx) => (
                       <span
-                        key={idx}
+                        key={opt.value}
                         className={`transition-all duration-150 ${
                           isCustomProduct 
                             ? 'cursor-not-allowed text-slate-300 select-none'
