@@ -19,7 +19,6 @@ const PAGES_CONFIG = [
   { id: "home", name: "Homepage", path: "/", icon: "🏠" },
   { id: "about", name: "About Us", path: "/about.htm", icon: "🏢" },
   { id: "products", name: "Products Catalog", path: "/products", icon: "🛒" },
-  { id: "gas-refills", name: "Gas Refills", path: "/gas-refills", icon: "🔄" },
   { id: "contact", name: "Contact Us", path: "/contact.htm", icon: "📞" },
   { id: "services", name: "Services", path: "/services", icon: "🛠️" },
 ];

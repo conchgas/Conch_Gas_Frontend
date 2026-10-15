@@ -494,7 +494,7 @@ export default function About() {
 
                 <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-slate-100">
                   <Link
-                    to="/products/gas-refills.htm"
+                    to="/products"
                     className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-[#830000] via-[#BC0202] to-[#FF0000] text-white text-xs font-black uppercase tracking-wider hover:brightness-110 shadow-md shadow-red-600/20 active:scale-98 transition-all"
                   >
                     <Flame size={16} />

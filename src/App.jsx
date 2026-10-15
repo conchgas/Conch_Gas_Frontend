@@ -21,7 +21,6 @@ const Thanks = lazy(() => import("./pages/Thanks"));
 const SpecialRates = lazy(() => import("./pages/SpecialRates"));
 const ProductsCatalogPage = lazy(() => import("./pages/ProductsCatalogPage"));
 const ProductPage = lazy(() => import("./pages/ProductPage"));
-const GasRefillsPage = lazy(() => import("./pages/GasRefillsPage"));
 const ServicesPage = lazy(() => import("./pages/ServicesPage"));
 
 // Admin Pages (Lazy Loaded)
@@ -141,7 +140,7 @@ function AppContent() {
               <Route path="/products" element={<ProductsCatalogPage />} />
               <Route path="/products/:slug" element={<ProductPage />} />
               <Route path="/products/:categorySlug/:slug" element={<ProductPage />} />
-              <Route path="/gas-refills" element={<GasRefillsPage />} />
+              <Route path="/gas-refills" element={<Navigate to="/products" replace />} />
 
               {/* Service Routes */}
               <Route path="/services" element={<ServicesPage />} />
